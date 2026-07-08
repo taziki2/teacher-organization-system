@@ -1,0 +1,266 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User roles
+enum UserRole {
+  SCHOOL_ADMIN
+  TEACHER
+  CITY_ADMIN
+  STATE_ADMIN
+}
+
+// Teacher assignment status
+enum AssignmentStatus {
+  PENDING
+  ASSIGNED
+  REJECTED
+  WITHDRAWN
+}
+
+// ============= Users & Authentication =============
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  password  String
+  name      String
+  role      UserRole
+  score     Float      @default(0) // امتیاز دبیر
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  // Relations
+  teacher         Teacher?
+  schoolAdmin     SchoolAdmin?
+  cityAdmin       CityAdmin?
+  stateAdmin      StateAdmin?
+  assignments     TeacherAssignment[]
+  notifications   Notification[]
+
+  @@index([email])
+}
+
+// ============= Geographic Hierarchy =============
+model State {
+  id    String @id @default(cuid())
+  name  String @unique
+  code  String @unique
+
+  cities      City[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([code])
+}
+
+model City {
+  id      String @id @default(cuid())
+  name    String
+  stateId String
+  state   State  @relation(fields: [stateId], references: [id], onDelete: Cascade)
+
+  schools     School[]
+  schoolAdmins CityAdmin[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, stateId])
+  @@index([stateId])
+}
+
+// ============= Schools & Organization =============
+model School {
+  id      String @id @default(cuid())
+  name    String
+  code    String @unique
+  cityId  String
+  city    City   @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  grades      Grade[]
+  teachers    TeacherAssignment[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([cityId])
+}
+
+model Grade {
+  id       String @id @default(cuid())
+  name     String // دهم، یازدهم، دوازدهم
+  schoolId String
+  school   School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  branches    Branch[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, schoolId])
+  @@index([schoolId])
+}
+
+model Branch {
+  id      String @id @default(cuid())
+  name    String // رشته: علوم، ریاضی، انسانی
+  gradeId String
+  grade   Grade  @relation(fields: [gradeId], references: [id], onDelete: Cascade)
+
+  classes     Class[]
+  subjects    Subject[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, gradeId])
+  @@index([gradeId])
+}
+
+model Class {
+  id       String @id @default(cuid())
+  name     String // A, B, C
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  assignments TeacherAssignment[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([name, branchId])
+  @@index([branchId])
+}
+
+model Subject {
+  id       String @id @default(cuid())
+  name     String // ریاضی، فارسی، انگلیسی
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([name, branchId])
+  @@index([branchId])
+}
+
+// ============= Teachers & Specialties =============
+model Teacher {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  specialties TeacherSpecialty[]
+  assignments TeacherAssignment[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model TeacherSpecialty {
+  id        String @id @default(cuid())
+  teacherId String
+  teacher   Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectId String
+  subject   Subject @relation(fields: [subjectId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, subjectId])
+  @@index([teacherId])
+  @@index([subjectId])
+}
+
+// ============= Assignments (Core Logic) =============
+model TeacherAssignment {
+  id        String           @id @default(cuid())
+  teacherId String
+  teacher   Teacher          @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId   String
+  class     Class            @relation(fields: [classId], references: [id], onDelete: Cascade)
+  schoolId  String
+  school    School           @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  status    AssignmentStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([teacherId, classId])
+  @@index([teacherId])
+  @@index([classId])
+  @@index([schoolId])
+  @@index([status])
+}
+
+// ============= Admins =============
+model SchoolAdmin {
+  id       String @id @default(cuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schoolId String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model CityAdmin {
+  id       String @id @default(cuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  cityId   String
+  city     City   @relation(fields: [cityId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([cityId])
+}
+
+model StateAdmin {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ============= Notifications =============
+model Notification {
+  id      String @id @default(cuid())
+  userId  String
+  user    User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title   String
+  message String
+  read    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([read])
+}
+
+// ============= Audit Logs =============
+model AuditLog {
+  id        String @id @default(cuid())
+  action    String // SCHOOL_SETUP, TEACHER_SIGNUP, ASSIGNMENT, etc
+  userId    String
+  details   String @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+}
